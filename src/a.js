@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
+  createUserWithEmailAndPassword, signInWithEmailAndPassword,
   signOut, onAuthStateChanged, updateProfile,
-  PhoneAuthProvider, RecaptchaVerifier, signInWithPhoneNumber,
-  signInWithCredential,
 } from "firebase/auth";
 import {
   doc, setDoc, getDoc, collection, addDoc,
@@ -224,15 +223,14 @@ input,textarea,select{font-family:'Sora',sans-serif;}
 
 /* Full-screen game layout */
 .mm-game{
-  min-height:100vh;
+  min-height:100vh;min-height:100dvh;
   background:var(--mm-bg);
   display:grid;
-  grid-template-rows:auto 1fr auto;
+  grid-template-rows:1fr auto;
   grid-template-columns:1fr;
   position:relative;
   overflow:hidden;
 }
-/* Starfield bg */
 .mm-game::before{
   content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
   background:
@@ -249,23 +247,46 @@ input,textarea,select{font-family:'Sora',sans-serif;}
 
 /* ── DESKTOP: side ladder ── */
 @media(min-width:860px){
-  .mm-game{
-    grid-template-columns:1fr 200px;
-    grid-template-rows:1fr;
-  }
+  .mm-game{grid-template-columns:1fr 200px;grid-template-rows:1fr;}
   .mm-main{grid-column:1;grid-row:1;}
   .mm-ladder{grid-column:2;grid-row:1;}
-  .mm-lifelines-mobile{display:none;}
+}
+
+/* ── LANDSCAPE MOBILE: side ladder like desktop ── */
+@media(max-height:500px) and (orientation:landscape){
+  .mm-game{grid-template-columns:1fr 160px;grid-template-rows:1fr;}
+  .mm-main{grid-column:1;grid-row:1;padding:8px 12px;gap:6px;}
+  .mm-ladder{
+    grid-column:2;grid-row:1;
+    border-left:1px solid rgba(30,80,200,.25);border-top:none;
+    flex-direction:column;overflow-y:auto;overflow-x:hidden;
+    padding:8px 6px;gap:2px;
+  }
+  .mm-rung{min-width:auto;flex-direction:row;padding:3px 6px;}
+  .mm-topbar{gap:8px;}
+  .mm-logo{font-size:16px;}
+  .mm-prize-display{font-size:14px;padding:4px 10px;}
+  .mm-qbox{padding:10px 14px;}
+  .mm-qnum{margin-bottom:4px;font-size:10px;}
+  .mm-qtext{font-size:13px;line-height:1.35;}
+  .mm-lifelines{gap:6px;}
+  .mm-ll-btn{width:44px;height:44px;}
+  .mm-ll-btn .ll-icon{font-size:16px;}
+  .mm-opts{gap:6px;}
+  .mm-opt{min-height:36px;padding:8px 20px 8px 14px;font-size:11px;}
+  .mm-timer-wrap{margin-bottom:0;}
+  .mm-walk-btn{padding:6px 12px;font-size:11px;}
 }
 
 /* ── MAIN CENTER AREA ── */
 .mm-main{
   display:flex;flex-direction:column;align-items:center;
-  padding:24px 16px 20px;
-  gap:16px;
+  padding:16px 16px 12px;
+  gap:10px;
   max-width:760px;margin:0 auto;width:100%;
+  overflow-y:auto;
 }
-@media(min-width:860px){.mm-main{padding:32px 40px 32px;max-width:none;}}
+@media(min-width:860px){.mm-main{padding:28px 40px;gap:14px;max-width:none;}}
 
 /* Logo / title bar */
 .mm-topbar{
@@ -460,14 +481,17 @@ input,textarea,select{font-family:'Sora',sans-serif;}
   padding:12px 8px;gap:3px;
   overflow-y:auto;
 }
-/* Mobile: horizontal scroll strip at bottom */
-@media(max-width:859px){
+/* Mobile portrait: compact horizontal strip */
+@media(max-width:859px) and (orientation:portrait){
   .mm-ladder{
     border-left:none;border-top:1px solid rgba(30,80,200,.25);
-    flex-direction:row;padding:10px 12px;
+    flex-direction:row;padding:8px 10px;
     overflow-x:auto;overflow-y:hidden;
-    flex-wrap:nowrap;
+    flex-wrap:nowrap;gap:4px;
   }
+}
+@media(max-width:859px) and (orientation:landscape){
+  .mm-ladder{display:none;}
 }
 
 .mm-rung{
@@ -476,9 +500,9 @@ input,textarea,select{font-family:'Sora',sans-serif;}
   border:1px solid transparent;
   transition:all .2s;flex-shrink:0;
 }
-/* Mobile rung sizing */
-@media(max-width:859px){
-  .mm-rung{min-width:110px;flex-direction:column;align-items:flex-start;padding:6px 10px;border-radius:6px;}
+/* Mobile portrait rung */
+@media(max-width:859px) and (orientation:portrait){
+  .mm-rung{min-width:96px;padding:5px 8px;border-radius:6px;}
 }
 .mm-rung.passed{opacity:.3;}
 .mm-rung.current{
@@ -674,239 +698,70 @@ function ToastContainer({ toasts }) {
   );
 }
 
-// ── AUTH (Phone OTP) ─────────────────────────────────────────
+// ── AUTH ─────────────────────────────────────────────────────
 function AuthScreen() {
-  // step: "phone" | "otp" | "name"
-  const [step,      setStep]      = useState("phone");
-  const [phone,     setPhone]     = useState("");
-  const [name,      setName]      = useState("");
-  const [otp,       setOtp]       = useState(["","","","","",""]);
-  const [err,       setErr]       = useState("");
-  const [load,      setLoad]      = useState(false);
-  const [countdown, setCountdown] = useState(0);
-  const [isNew,     setIsNew]     = useState(false);
-  const confirmRef  = useRef(null);
-  const digitRefs   = [useRef(),useRef(),useRef(),useRef(),useRef(),useRef()];
-  const rcRef       = useRef(null);
+  const [tab,  setTab]  = useState("login");
+  const [name, setName] = useState("");
+  const [email,setEmail]= useState("");
+  const [pass, setPass] = useState("");
+  const [err,  setErr]  = useState("");
+  const [load, setLoad] = useState(false);
+  const reset = t => { setTab(t); setErr(""); };
 
-  // Countdown timer for resend
-  useEffect(() => {
-    if (countdown <= 0) return;
-    const t = setTimeout(() => setCountdown(c => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [countdown]);
-
-  // Setup invisible reCAPTCHA once
-  const setupRecaptcha = () => {
-    if (rcRef.current) return rcRef.current;
-    const verifier = new RecaptchaVerifier(auth, "recaptcha-container", {
-      size: "invisible",
-      callback: () => {},
-    });
-    rcRef.current = verifier;
-    return verifier;
-  };
-
-  const sendOTP = async () => {
-    const raw = phone.replace(/\D/g, "");
-    if (raw.length < 8) { setErr("Зөв утасны дугаар оруулна уу."); return; }
-    const fullPhone = "+976" + raw;
+  const login = async () => {
+    if (!email||!pass) { setErr("Бүх талбарыг бөглөнө үү."); return; }
     setLoad(true); setErr("");
-    try {
-      const verifier = setupRecaptcha();
-      const result = await signInWithPhoneNumber(auth, fullPhone, verifier);
-      confirmRef.current = result;
-      setStep("otp");
-      setCountdown(60);
-      setTimeout(() => digitRefs[0].current?.focus(), 100);
-    } catch (e) {
-      const msg =
-        e.code === "auth/invalid-phone-number"  ? "Утасны дугаар буруу байна." :
-        e.code === "auth/too-many-requests"      ? "Хэт олон оролдлого. Түр хүлээнэ үү." :
-        e.code === "auth/captcha-check-failed"   ? "reCAPTCHA шалгалт амжилтгүй. Дахин оролдно уу." :
-        "OTP илгээхэд алдаа гарлаа. Дахин оролдно уу.";
-      setErr(msg);
-      rcRef.current = null;
-    }
+    try { await signInWithEmailAndPassword(auth, email, pass); }
+    catch(e) { setErr(e.code==="auth/invalid-credential"?"Имэйл эсвэл нууц үг буруу.":"Нэвтрэхэд алдаа гарлаа."); }
     setLoad(false);
   };
 
-  const verifyOTP = async () => {
-    const code = otp.join("");
-    if (code.length < 6) { setErr("6 оронтой кодыг бүтэн оруулна уу."); return; }
+  const register = async () => {
+    if (!name||!email||!pass) { setErr("Бүх талбарыг бөглөнө үү."); return; }
+    if (pass.length<6) { setErr("Нууц үг 6+ тэмдэгт байх ёстой."); return; }
     setLoad(true); setErr("");
     try {
-      const result = await confirmRef.current.confirm(code);
-      const u = result.user;
-      // Check if new user (no displayName yet)
-      const snap = await getDoc(doc(db, "users", u.uid));
-      if (!snap.exists()) {
-        setIsNew(true);
-        setStep("name");
-      }
-      // If existing user — onAuthStateChanged handles redirect automatically
-    } catch (e) {
-      const msg =
-        e.code === "auth/invalid-verification-code" ? "Код буруу байна. Дахин шалгана уу." :
-        e.code === "auth/code-expired"               ? "Кодын хугацаа дууссан. Дахин илгээнэ үү." :
-        "Баталгаажуулахад алдаа гарлаа.";
-      setErr(msg);
-      setOtp(["","","","","",""]);
-      setTimeout(() => digitRefs[0].current?.focus(), 50);
-    }
-    setLoad(false);
-  };
-
-  const saveName = async () => {
-    if (!name.trim()) { setErr("Нэрээ оруулна уу."); return; }
-    setLoad(true); setErr("");
-    try {
-      const u = auth.currentUser;
-      await updateProfile(u, { displayName: name.trim() });
-      await setDoc(doc(db, "users", u.uid), {
-        name: name.trim(),
-        phone: phone,
-        totalPrize: 0, gamesPlayed: 0, bestPrize: 0,
+      const c = await createUserWithEmailAndPassword(auth, email, pass);
+      await updateProfile(c.user, { displayName: name });
+      await setDoc(doc(db,"users",c.user.uid), {
+        name, email, totalPrize:0, gamesPlayed:0, bestPrize:0,
         createdAt: new Date().toISOString(),
       });
-      // onAuthStateChanged will pick up the signed-in user
-    } catch (e) {
-      setErr("Профайл хадгалахад алдаа гарлаа.");
+    } catch(e) {
+      setErr(e.code==="auth/email-already-in-use"?"Энэ имэйл бүртгэлтэй байна.":"Бүртгэлд алдаа гарлаа.");
     }
     setLoad(false);
-  };
-
-  // OTP digit input handler
-  const handleDigit = (i, val) => {
-    const v = val.replace(/\D/g, "").slice(-1);
-    const next = [...otp];
-    next[i] = v;
-    setOtp(next);
-    if (v && i < 5) digitRefs[i+1].current?.focus();
-    if (!v && i > 0 && val === "") digitRefs[i-1].current?.focus();
-  };
-  const handleDigitKey = (i, e) => {
-    if (e.key === "Backspace" && !otp[i] && i > 0) {
-      digitRefs[i-1].current?.focus();
-    }
-    if (e.key === "Enter") {
-      if (step === "otp" && otp.join("").length === 6) verifyOTP();
-    }
-  };
-  // Handle paste into OTP boxes
-  const handlePaste = (e) => {
-    const pasted = e.clipboardData.getData("text").replace(/\D/g,"").slice(0,6);
-    if (pasted.length) {
-      const next = [...otp];
-      pasted.split("").forEach((c,i) => { next[i] = c; });
-      setOtp(next);
-      const focusIdx = Math.min(pasted.length, 5);
-      digitRefs[focusIdx].current?.focus();
-      e.preventDefault();
-    }
   };
 
   return (
-    <div style={{ background: "var(--bg)" }}>
+    <div style={{background:"var(--bg)"}}>
       <style>{styles}</style>
-      <div id="recaptcha-container"/>
       <div className="auth-bg">
         <div className="auth-box">
           <div className="auth-logo">
             <span className="auth-logo-main">САЯТАН</span>
             <span className="auth-logo-sub">Нэг сая төгрөгийн тоглоом</span>
           </div>
-
-          {/* ── STEP 1: Phone number ── */}
-          {step === "phone" && (
-            <div className="otp-step">
-              {err && <div className="err">{err}</div>}
-              <div className="fg">
-                <label>Утасны дугаар</label>
-                <div className="phone-input-wrap">
-                  <div className="country-code">🇲🇳 +976</div>
-                  <input
-                    className="phone-main"
-                    style={{background:"var(--bg2)",border:"1px solid var(--bdr)",borderRadius:9,padding:"11px 14px",color:"var(--txt)",fontSize:16,outline:"none",width:"100%",transition:"border-color .2s"}}
-                    type="tel" inputMode="numeric" placeholder="9911 2233"
-                    value={phone} maxLength={8}
-                    onChange={e => setPhone(e.target.value.replace(/\D/g,""))}
-                    onKeyDown={e => e.key==="Enter" && sendOTP()}
-                    onFocus={e => e.target.style.borderColor="var(--gold)"}
-                    onBlur={e => e.target.style.borderColor="var(--bdr)"}
-                  />
-                </div>
-              </div>
-              <button className="btn-gold" disabled={load || phone.length < 8} onClick={sendOTP}>
-                {load ? "Илгээж байна..." : "OTP код авах →"}
-              </button>
-              <div className="auth-hint">
-                Таны дугаарт 6 оронтой баталгаажуулах код илгээгдэнэ.<br/>
-                Анх удаа нэвтэрч байгаа бол автоматаар бүртгэгдэнэ.
-              </div>
+          <div className="auth-tabs">
+            <button className={"auth-tab"+(tab==="login"?" on":"")} onClick={()=>reset("login")}>Нэвтрэх</button>
+            <button className={"auth-tab"+(tab==="register"?" on":"")} onClick={()=>reset("register")}>Бүртгүүлэх</button>
+          </div>
+          {err && <div className="err">{err}</div>}
+          {tab==="register" && (
+            <div className="fg"><label>Нэр</label>
+              <input type="text" placeholder="Таны нэр" value={name} onChange={e=>setName(e.target.value)}/>
             </div>
           )}
-
-          {/* ── STEP 2: OTP code ── */}
-          {step === "otp" && (
-            <div className="otp-step">
-              <button className="auth-back" onClick={() => { setStep("phone"); setOtp(["","","","","",""]); setErr(""); }}>
-                ← Буцах
-              </button>
-              <div style={{textAlign:"center",marginBottom:16}}>
-                <div style={{fontSize:13,color:"var(--txt2)",marginBottom:4}}>
-                  <strong style={{color:"var(--gold)"}}>+976 {phone}</strong> дугаарт
-                </div>
-                <div style={{fontSize:13,color:"var(--txt3)"}}>6 оронтой код илгээлээ</div>
-              </div>
-              {err && <div className="err">{err}</div>}
-              <div className="otp-boxes" onPaste={handlePaste}>
-                {otp.map((d,i) => (
-                  <input
-                    key={i} ref={digitRefs[i]}
-                    className={"otp-digit"+(d?" filled":"")}
-                    type="tel" inputMode="numeric"
-                    maxLength={1} value={d}
-                    onChange={e => handleDigit(i, e.target.value)}
-                    onKeyDown={e => handleDigitKey(i, e)}
-                  />
-                ))}
-              </div>
-              <button className="btn-gold" style={{marginTop:16}}
-                disabled={load || otp.join("").length < 6} onClick={verifyOTP}>
-                {load ? "Шалгаж байна..." : "Баталгаажуулах →"}
-              </button>
-              <div className="otp-resend">
-                {countdown > 0
-                  ? <span>Дахин илгээх: {countdown}с</span>
-                  : <><span>Код ирээгүй юу? </span><button onClick={() => { setOtp(["","","","","",""]); setStep("phone"); }}>Дахин илгээх</button></>
-                }
-              </div>
-            </div>
-          )}
-
-          {/* ── STEP 3: Enter name (new users only) ── */}
-          {step === "name" && (
-            <div className="otp-step">
-              <div style={{textAlign:"center",marginBottom:20}}>
-                <div style={{fontSize:24,marginBottom:8}}>👋</div>
-                <div style={{fontSize:15,fontWeight:700,marginBottom:4}}>Тавтай морил!</div>
-                <div style={{fontSize:13,color:"var(--txt3)"}}>Нэрээ оруулж тоглоомоо эхлүүлнэ үү</div>
-              </div>
-              {err && <div className="err">{err}</div>}
-              <div className="fg">
-                <label>Нэр / Хоч</label>
-                <input type="text" placeholder="Жишээ: Аварга99"
-                  value={name} onChange={e => setName(e.target.value)}
-                  onKeyDown={e => e.key==="Enter" && saveName()}
-                  autoFocus
-                />
-              </div>
-              <button className="btn-gold" disabled={load || !name.trim()} onClick={saveName}>
-                {load ? "Хадгалж байна..." : "Тоглоом эхлүүлэх 🎮"}
-              </button>
-            </div>
-          )}
+          <div className="fg"><label>Имэйл</label>
+            <input type="email" placeholder="email@example.com" value={email} onChange={e=>setEmail(e.target.value)}/>
+          </div>
+          <div className="fg"><label>Нууц үг</label>
+            <input type="password" placeholder="••••••••" value={pass} onChange={e=>setPass(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&(tab==="login"?login():register())}/>
+          </div>
+          <button className="btn-gold" disabled={load} onClick={tab==="login"?login:register}>
+            {load?"Түр хүлээнэ үү...":(tab==="login"?"Тоглоомд нэвтрэх →":"Бүртгүүлэх →")}
+          </button>
         </div>
       </div>
     </div>
@@ -1288,7 +1143,7 @@ function ProfileView({ user, profile }) {
           {(user.displayName||"T")[0].toUpperCase()}
         </div>
         <div className="profile-name">{user.displayName||"Тоглогч"}</div>
-        <div className="profile-email">{user.phoneNumber || profile?.phone || "Утас байхгүй"}</div>
+        <div className="profile-email">{user.email}</div>
         <div className="profile-stats-grid">
           <div className="ps-item"><span className="ps-num">{profile?.gamesPlayed||0}</span><span className="ps-label">Тоглолт</span></div>
           <div className="ps-item"><span className="ps-num" style={{color:"var(--gold)"}}>{fmt(profile?.bestPrize||0)}</span><span className="ps-label">Шилдэг</span></div>
@@ -1615,8 +1470,7 @@ export default function App() {
   const [allQuestions, setAllQuestions] = useState([]);
   const { toasts, addToast }    = useToast();
 
-  const ADMIN_PHONE = process.env.REACT_APP_ADMIN_PHONE || "+97699112233";
-  const isAdmin = user?.phoneNumber === ADMIN_PHONE;
+  const isAdmin = user?.email === ADMIN_EMAIL;
 
   // Auth listener
   useEffect(() => {
